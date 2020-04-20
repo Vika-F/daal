@@ -121,6 +121,10 @@ Status SVDBatchKernel<algorithmFPType, method, cpu>::compute_seq(const size_t na
         algorithmFPType * Sigma = sigmaPtr.get();
         const algorithmFPType zero(0.0);
         service_memset<algorithmFPType, cpu>(Sigma, zero, n);
+        if (m < n)
+        {
+            service_memset<algorithmFPType, cpu>(QT + m * m, zero, (n - m) * m);
+        }
 
         compute_svd_on_one_node<algorithmFPType, cpu>(m, n, AT, m, Sigma, QT, m, VT, n);
 
