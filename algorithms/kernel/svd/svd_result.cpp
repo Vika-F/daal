@@ -69,20 +69,21 @@ void Result::set(ResultId id, const NumericTablePtr & value)
  */
 Status Result::check(const daal::algorithms::Input * input, const daal::algorithms::Parameter * par, int method) const
 {
-    const Input * algInput = static_cast<const Input *>(input);
-    Parameter * svdPar     = static_cast<Parameter *>(const_cast<daal::algorithms::Parameter *>(par));
-    size_t nVectors        = algInput->get(data)->getNumberOfRows();
-    size_t nFeatures       = algInput->get(data)->getNumberOfColumns();
-    int unexpectedLayouts  = (int)packed_mask;
+    const Input * algInput   = static_cast<const Input *>(input);
+    Parameter * svdPar       = static_cast<Parameter *>(const_cast<daal::algorithms::Parameter *>(par));
+    const size_t nVectors    = algInput->get(data)->getNumberOfRows();
+    const size_t nFeatures   = algInput->get(data)->getNumberOfColumns();
+    const size_t nComponents = (nVectors < nFeatures ? nVectors : nFeatures);
+    int unexpectedLayouts    = (int)packed_mask;
 
-    Status s = checkNumericTable(get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nFeatures, 1);
+    Status s = checkNumericTable(get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nComponents, 1);
     if (svdPar->rightSingularMatrix == requiredInPackedForm)
     {
-        s |= checkNumericTable(get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nFeatures);
+        s |= checkNumericTable(get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nComponents);
     }
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
-        s |= checkNumericTable(get(leftSingularMatrix).get(), leftSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nVectors);
+        s |= checkNumericTable(get(leftSingularMatrix).get(), leftSingularMatrixStr(), unexpectedLayouts, 0, nComponents, nVectors);
     }
     return s;
 }

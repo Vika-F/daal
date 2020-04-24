@@ -44,33 +44,33 @@ namespace svd
 namespace internal
 {
 template <typename algorithmFPType, CpuType cpu>
-Status compute_svd_on_one_node(DAAL_INT m, DAAL_INT n, algorithmFPType * a, DAAL_INT lda, algorithmFPType * s, algorithmFPType * u, DAAL_INT ldu,
-                               algorithmFPType * vt, DAAL_INT ldvt)
+Status compute_svd_on_one_node(DAAL_INT m, DAAL_INT n, const algorithmFPType * const a, DAAL_INT lda, algorithmFPType * s, algorithmFPType * u,
+                               DAAL_INT ldu, algorithmFPType * vt, DAAL_INT ldvt)
 {
-    /* Specifies options for computing all or part of the matrix U                                       */
+    /* Specifies options for computing all or part of the matrix U and VT respectively                   */
+    /* 'A': all columns of U (rows of VT) are returned in the array u / vt                               */
     /* 'S': the first min(m, n) columns of U (the left singular vectors) are returned in the array u     */
-    char jobu = 'S';
-
-    /* Specifies options for computing all or part of the matrix V^T/V^H                                 */
-    /* 'S': the first min(m, n) rows of V^T/V^H (the right singular vectors) are returned in the array vt */
-    char jobvt = (m > n ? 'S' : 'A');
+    /* 'N': u / vt is not required                                                                       */
+    char jobu  = (u ? (m < n ? 'A' : 'S') : 'N');
+    char jobvt = (vt ? (m < n ? 'S' : 'A') : 'N');
 
     DAAL_INT workDim   = -1; /* =lwork in Intel(R) MKL API */
     DAAL_INT mklStatus = 0;  /* =info in Intel(R) MKL API  */
 
     /* buffers */
-    algorithmFPType workQuery[2]; /* align? */
+    algorithmFPType workQuery;
 
     /* buffer size query */
-    Lapack<algorithmFPType, cpu>::xgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, workQuery, workDim, &mklStatus);
-    workDim = workQuery[0];
+    Lapack<algorithmFPType, cpu>::xgesvd(jobu, jobvt, m, n, const_cast<algorithmFPType *>(a), lda, s, u, ldu, vt, ldvt, &workQuery, workDim,
+                                         &mklStatus);
+    workDim = workQuery;
 
     /* computation block */
     TArray<algorithmFPType, cpu> workPtr(workDim);
     algorithmFPType * work = workPtr.get();
     DAAL_CHECK(work, ErrorMemoryAllocationFailed);
 
-    Lapack<algorithmFPType, cpu>::xgesvd(jobu, jobvt, m, n, a, lda, s, u, ldu, vt, ldvt, work, workDim, &mklStatus);
+    Lapack<algorithmFPType, cpu>::xgesvd(jobu, jobvt, m, n, const_cast<algorithmFPType *>(a), lda, s, u, ldu, vt, ldvt, work, workDim, &mklStatus);
 
     if (mklStatus != 0)
     {
@@ -191,7 +191,6 @@ Status compute_QR_on_one_node(DAAL_INT m, DAAL_INT n, algorithmFPType * a_q, DAA
 
     if (m < n)
     {
-        const algorithmFPType zero(0.0);
         for (size_t i = m; i < n; ++i)
         {
             PRAGMA_IVDEP
@@ -199,13 +198,6 @@ Status compute_QR_on_one_node(DAAL_INT m, DAAL_INT n, algorithmFPType * a_q, DAA
             for (size_t j = 0; j < m; ++j)
             {
                 r[i * ldr + j] = a_q[i * lda_q + j];
-            }
-
-            PRAGMA_IVDEP
-            PRAGMA_VECTOR_ALWAYS
-            for (size_t j = m; j <= i; ++j)
-            {
-                r[i * ldr + j] = zero;
             }
         }
     }
