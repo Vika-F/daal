@@ -77,33 +77,6 @@ Status SVDBatchKernel<algorithmFPType, method, cpu>::compute(const size_t na, co
     return SVDBatchKernel<algorithmFPType, method, cpu>::compute_thr(na, a, nr, r, svdPar);
 }
 
-template <typename algorithmFPType, CpuType cpu>
-class SingularVectorStorage
-{
-public:
-    SingularVectorStorage(bool isPacked) : _isPacked(isPacked), _storage(nullptr) {}
-
-    Status init(NumericTable & nt)
-    {
-        const size_t m = nt.getNumberOfRows();
-        if (_isPacked)
-        {
-            _block.set(nt, 0, m);
-            DAAL_CHECK_BLOCK_STATUS(_block);
-            _storage = _block.get();
-        }
-        return Status();
-    }
-
-    algorithmFPType * get() { return _storage; }
-
-protected:
-    bool _isPacked;
-    algorithmFPType * _storage;
-    WriteOnlyRows<algorithmFPType, cpu, NumericTable> _block;
-    TArray<algorithmFPType, cpu> _ptr;
-};
-
 template <typename algorithmFPType, daal::algorithms::svd::Method method, CpuType cpu>
 Status SVDBatchKernel<algorithmFPType, method, cpu>::compute_seq(const size_t na, const NumericTable * const * a, const size_t nr, NumericTable * r[],
                                                                  const Parameter * svdPar)
@@ -121,8 +94,8 @@ Status SVDBatchKernel<algorithmFPType, method, cpu>::compute_seq(const size_t na
 
     WriteOnlyRows<algorithmFPType, cpu, NumericTable> Ublock;
     WriteOnlyRows<algorithmFPType, cpu, NumericTable> VTblock;
-    algorithmFPType * const U  = nullptr; /* Left singular vectors */
-    algorithmFPType * const VT = nullptr; /* Right singular vectors */
+    algorithmFPType * U  = nullptr; /* Left singular vectors */
+    algorithmFPType * VT = nullptr; /* Right singular vectors */
 
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
