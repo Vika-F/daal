@@ -78,9 +78,10 @@ DAAL_EXPORT Status OnlinePartialResult::addPartialResultStorage(size_t m, size_t
 {
     DataCollectionPtr rCollection = staticPointerCast<DataCollection, SerializationIface>(Argument::get(outputOfStep1ForStep2));
     Status st;
+    const size_t nComponents = (m < n ? m : n);
     if (rCollection)
     {
-        rCollection->push_back(HomogenNumericTable<algorithmFPType>::create(m, m, NumericTable::doAllocate, &st));
+        rCollection->push_back(HomogenNumericTable<algorithmFPType>::create(m, nComponents, NumericTable::doAllocate, &st));
     }
     else
     {
@@ -92,7 +93,7 @@ DAAL_EXPORT Status OnlinePartialResult::addPartialResultStorage(size_t m, size_t
         DataCollectionPtr qCollection = staticPointerCast<DataCollection, SerializationIface>(Argument::get(outputOfStep1ForStep3));
         if (qCollection)
         {
-            qCollection->push_back(HomogenNumericTable<algorithmFPType>::create(m, n, NumericTable::doAllocate, &st));
+            qCollection->push_back(HomogenNumericTable<algorithmFPType>::create(nComponents, n, NumericTable::doAllocate, &st));
         }
         else
         {

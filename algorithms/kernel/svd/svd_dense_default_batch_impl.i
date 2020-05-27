@@ -337,7 +337,7 @@ Status SVDBatchKernel<algorithmFPType, method, cpu>::compute_thr(const size_t na
 
         if (svdPar->leftSingularMatrix == requiredInPackedForm)
         {
-            compute_gemm_on_one_node_seq<algorithmFPType, cpu>(cols * blocks, cols, RT_buff, cols * blocks, U_buff, cols, R_buff, cols * blocks);
+            compute_gemm_on_one_node_seq<algorithmFPType, cpu>('N', 'N', cols * blocks, cols, cols, RT_buff, cols * blocks, U_buff, cols, R_buff, cols * blocks);
         }
 
         if (svdPar->rightSingularMatrix == requiredInPackedForm)
@@ -411,7 +411,7 @@ Status SVDBatchKernel<algorithmFPType, method, cpu>::compute_thr(const size_t na
             }
 
             /* Call GEMMs to multiply Q*R */
-            compute_gemm_on_one_node_seq<algorithmFPType, cpu>(brows_local, cols_local, QT_local, brows_local, RT_local, cols_local, QT_result_local,
+            compute_gemm_on_one_node_seq<algorithmFPType, cpu>('N', 'N', brows_local, cols_local, cols_local, QT_local, brows_local, RT_local, cols_local, QT_result_local,
                                                                brows_local);
 
             /* Transpose result Q */

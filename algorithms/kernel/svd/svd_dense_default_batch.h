@@ -72,7 +72,7 @@ template <typename algorithmFPType>
 DAAL_EXPORT Status Result::allocateImpl(size_t m, size_t n)
 {
     Status st;
-    const size_t nComponents = (n < m ? n : m);
+    const size_t nComponents = (n ? (n < m ? n : m) : m);
     set(singularValues, HomogenNumericTable<algorithmFPType>::create(nComponents, 1, NumericTable::doAllocate, &st));
     set(rightSingularMatrix, HomogenNumericTable<algorithmFPType>::create(m, nComponents, NumericTable::doAllocate, &st));
     if (n != 0)

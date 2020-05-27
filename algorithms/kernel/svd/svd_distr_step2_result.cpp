@@ -98,6 +98,7 @@ Status DistributedPartialResult::check(const daal::algorithms::Parameter * param
 {
     // check key-value dataCollection;
     KeyValueDataCollectionPtr resultKeyValueDC = get(outputOfStep2ForStep3);
+
     DAAL_CHECK_EX(resultKeyValueDC, ErrorNullOutputDataCollection, ArgumentName, outputOfStep2ForStep3Str());
 
     size_t nNodes = resultKeyValueDC->size();
@@ -118,6 +119,7 @@ Status DistributedPartialResult::check(const daal::algorithms::Parameter * param
     Status s = checkNumericTable(firstNumTableInFirstNodeCollection.get(), SVDNodeCollectionNTStr());
     DAAL_CHECK_STATUS_VAR(s)
     size_t nFeatures = firstNumTableInFirstNodeCollection->getNumberOfColumns();
+    size_t nRowsInRFull = 0;
     DAAL_CHECK(nNodes <= services::internal::MaxVal<int>::get(), ErrorIncorrectNumberOfNodes)
     // check all dataCollection in key-value dataCollection
     for (size_t i = 0; i < nNodes; i++)
@@ -133,21 +135,26 @@ Status DistributedPartialResult::check(const daal::algorithms::Parameter * param
             DAAL_CHECK_EX((*nodeCollection)[j], ErrorNullNumericTable, ArgumentName, SVDNodeCollectionNTStr());
             NumericTablePtr rNumTableInNodeCollection = NumericTable::cast((*nodeCollection)[j]);
             DAAL_CHECK_EX(rNumTableInNodeCollection, ErrorIncorrectElementInNumericTableCollection, ArgumentName, SVDNodeCollectionStr());
-            int unexpectedLayouts = (int)packed_mask;
-            s |= checkNumericTable(rNumTableInNodeCollection.get(), SVDNodeCollectionNTStr(), unexpectedLayouts, 0, nFeatures, nFeatures);
+            const int unexpectedLayouts = (int)packed_mask;
+            const size_t nRowsInR = rNumTableInNodeCollection->getNumberOfRows();
+            s |= checkNumericTable(rNumTableInNodeCollection.get(), SVDNodeCollectionNTStr(), unexpectedLayouts, 0, nFeatures, nRowsInR);
             DAAL_CHECK_STATUS_VAR(s)
+            nRowsInRFull += nRowsInR;
         }
     }
     Parameter * svdPar    = static_cast<Parameter *>(const_cast<daal::algorithms::Parameter *>(parameter));
-    int unexpectedLayouts = (int)packed_mask;
-    s |= checkNumericTable(get(finalResultFromStep2Master)->get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nFeatures, 1);
+    const int unexpectedLayouts = (int)packed_mask;
+    ResultPtr result = get(finalResultFromStep2Master);
+    const size_t nComponents = (nFeatures < nRowsInRFull ? nFeatures : nRowsInRFull);
+    s |= checkNumericTable(result->get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nComponents, 1);
     DAAL_CHECK_STATUS_VAR(s)
     if (svdPar->rightSingularMatrix == requiredInPackedForm)
     {
-        if (get(finalResultFromStep2Master))
+        if (result)
         {
-            s |= checkNumericTable(get(finalResultFromStep2Master)->get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0,
-                                   nFeatures, nFeatures);
+            nFeatures = result->get(rightSingularMatrix)->getNumberOfColumns();
+            s |= checkNumericTable(result->get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0,
+                                   nFeatures, nComponents);
             DAAL_CHECK_STATUS_VAR(s)
         }
     }

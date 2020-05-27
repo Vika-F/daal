@@ -58,27 +58,28 @@ Status SVDOnlineKernel<algorithmFPType, method, cpu>::compute(const size_t na, c
         svdPar = static_cast<const svd::Parameter *>(par);
     }
 
-    NumericTable * ntAi    = const_cast<NumericTable *>(a[0]);
-    NumericTable * ntAux2i = r[1];
+    NumericTable * const ntAi    = const_cast<NumericTable *>(a[0]);
+    NumericTable * const ntAux2i = r[1];
 
-    size_t n = ntAi->getNumberOfColumns();
-    size_t m = ntAi->getNumberOfRows();
+    const size_t n = ntAi->getNumberOfColumns();
+    const size_t m = ntAi->getNumberOfRows();
+    const size_t nComponents = ntAux2i->getNumberOfRows();
 
     ReadRows<algorithmFPType, cpu, NumericTable> AiBlock(ntAi, 0, m); /* Ai [m][n] */
     DAAL_CHECK_BLOCK_STATUS(AiBlock);
     const algorithmFPType * Ai = AiBlock.get();
 
-    WriteOnlyRows<algorithmFPType, cpu, NumericTable> Aux2iBlock(ntAux2i, 0, n); /* Aux2i = Ri [n][n] */
+    WriteOnlyRows<algorithmFPType, cpu, NumericTable> Aux2iBlock(ntAux2i, 0, nComponents); /* Aux2i = Ri [nComponents][n] */
     DAAL_CHECK_BLOCK_STATUS(Aux2iBlock);
     algorithmFPType * Aux2i = Aux2iBlock.get();
 
     DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n, m);
-    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n, n);
+    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n, nComponents);
     DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n * m, sizeof(algorithmFPType));
-    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n * n, sizeof(algorithmFPType));
+    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n * nComponents, sizeof(algorithmFPType));
 
     TArray<algorithmFPType, cpu> Aux1iTPtr(n * m);
-    TArray<algorithmFPType, cpu> Aux2iTPtr(n * n);
+    TArray<algorithmFPType, cpu> Aux2iTPtr(n * nComponents);
     algorithmFPType * Aux1iT = Aux1iTPtr.get();
     algorithmFPType * Aux2iT = Aux2iTPtr.get();
 
@@ -92,33 +93,41 @@ Status SVDOnlineKernel<algorithmFPType, method, cpu>::compute(const size_t na, c
         }
     }
 
-    const auto ec = compute_QR_on_one_node<algorithmFPType, cpu>(m, n, Aux1iT, m, Aux2iT, n);
+    const auto ec = compute_QR_on_one_node<algorithmFPType, cpu>(m, n, Aux1iT, m, Aux2iT, nComponents);
     if (!ec) return ec;
 
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
-        WriteOnlyRows<algorithmFPType, cpu, NumericTable> Aux1iBlock(r[0], 0, n); /* Aux1i = Qin[m][n] */
+        WriteOnlyRows<algorithmFPType, cpu, NumericTable> Aux1iBlock(r[0], 0, m); /* Aux1i = Qin[m][nComponents] */
         DAAL_CHECK_BLOCK_STATUS(Aux1iBlock);
         algorithmFPType * Aux1i = Aux1iBlock.get();
 
-        for (i = 0; i < n; i++)
+        for (i = 0; i < nComponents; i++)
         {
             for (j = 0; j < m; j++)
             {
-                Aux1i[i + j * n] = Aux1iT[i * m + j];
+                Aux1i[i + j * nComponents] = Aux1iT[i * m + j];
             }
         }
     }
 
-    for (i = 0; i < n; i++)
+    for (i = 0; i < nComponents; i++)
     {
         for (j = 0; j <= i; j++)
         {
-            Aux2i[i + j * n] = Aux2iT[i * n + j];
+            Aux2i[i + j * n] = Aux2iT[i * nComponents + j];
         }
-        for (; j < n; j++)
+        for (; j < nComponents; j++)
         {
             Aux2i[i + j * n] = 0.0;
+        }
+    }
+
+    for (i = nComponents; i < n; i++)
+    {
+        for (j = 0; j < nComponents; j++)
+        {
+            Aux2i[i + j * n] = Aux2iT[i * nComponents + j];
         }
     }
 
@@ -141,8 +150,8 @@ Status SVDOnlineKernel<algorithmFPType, method, cpu>::finalizeCompute(const size
     NumericTable * ntSigma        = r[0];
     NumericTable * ntV            = r[2];
 
-    size_t nBlocks = na / 2;
-    size_t n       = ntAux2_0->getNumberOfColumns();
+    const size_t nBlocks = na / 2;
+    const size_t n       = ntAux2_0->getNumberOfColumns();
 
     /* Step 2 */
     const NumericTable * const * step2ntIn = a;
@@ -155,9 +164,17 @@ Status SVDOnlineKernel<algorithmFPType, method, cpu>::finalizeCompute(const size
     Status st;
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
+        size_t nRowsFull = 0;
         for (size_t k = 0; k < nBlocks; k++)
         {
-            step2ntOut[2 + k] = new HomogenNumericTableCPU<algorithmFPType, cpu>(n, n, st);
+            nRowsFull += a[k]->getNumberOfRows();
+        }
+        const size_t nColumns = (nRowsFull < n ? nRowsFull : n);
+        for (size_t k = 0; k < nBlocks; k++)
+        {
+            const NumericTable * const ntRk = a[k];
+            const size_t nComponents = ntRk->getNumberOfRows();
+            step2ntOut[2 + k] = new HomogenNumericTableCPU<algorithmFPType, cpu>(nColumns, nComponents, st);
             DAAL_CHECK_STATUS_VAR(st);
             if (!step2ntOut[2 + k])
             {
@@ -179,19 +196,20 @@ Status SVDOnlineKernel<algorithmFPType, method, cpu>::finalizeCompute(const size
     if (s && svdPar->leftSingularMatrix == requiredInPackedForm)
     {
         WriteOnlyRows<algorithmFPType, cpu, NumericTable> QBlock; /* Aux1i = Qin[m][n] */
+        const size_t nComponents = ntSigma->getNumberOfColumns();
 
         size_t computedRows = 0;
 
         for (size_t i = 0; i < nBlocks; i++)
         {
-            const NumericTable * ntAux1i = a[nBlocks + i];
-            size_t m                     = ntAux1i->getNumberOfRows();
+            const NumericTable * const ntAux1i = a[nBlocks + i];
+            const size_t m                     = ntAux1i->getNumberOfRows();
 
             algorithmFPType * Qi = QBlock.set(r[1], computedRows, m);
             s                    = QBlock.status();
             if (!s) break;
 
-            HomogenNumericTableCPU<algorithmFPType, cpu> ntQi(Qi, n, m, s);
+            HomogenNumericTableCPU<algorithmFPType, cpu> ntQi(Qi, nComponents, m, s);
             DAAL_CHECK_STATUS_VAR(s);
 
             const NumericTable * step3ntIn[2] = { ntAux1i, step2ntOut[2 + i] };

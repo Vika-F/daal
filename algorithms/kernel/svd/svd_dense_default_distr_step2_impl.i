@@ -58,117 +58,136 @@ Status SVDDistributedStep2Kernel<algorithmFPType, method, cpu>::compute(const si
         svdPar = static_cast<const svd::Parameter *>(par);
     }
 
-    const NumericTable * ntAux2_0 = a[0];
-    NumericTable * ntSigma        = const_cast<NumericTable *>(r[0]);
+    const NumericTable * const ntAux2_0 = a[0];
+    NumericTable * const ntSigma        = const_cast<NumericTable *>(r[0]);
 
-    size_t nBlocks = na;
+    const size_t nBlocks = na;
 
-    size_t n   = ntAux2_0->getNumberOfColumns();
-    size_t nxb = n * nBlocks;
+    const size_t n   = ntAux2_0->getNumberOfColumns();
+    size_t nRowsFull = 0;   /* Full number of rows in all partial matrices Ri - partial results of QR decomposition */
+    TArray<size_t, cpu> nRowsOffsetsPtr(nBlocks);
+    size_t * const nRowsOffsets = nRowsOffsetsPtr.get();
+    DAAL_CHECK(nRowsOffsets, ErrorMemoryAllocationFailed);
+    for (size_t i = 0; i < nBlocks; ++i)
+    {
+        nRowsOffsets[i] = nRowsFull;
+        nRowsFull += a[i]->getNumberOfRows();
+    }
+    const size_t nColsInSigma = ntSigma->getNumberOfColumns();
+    const size_t nComponents = (nRowsFull < nColsInSigma ? nRowsFull : nColsInSigma);
 
-    WriteOnlyRows<algorithmFPType, cpu, NumericTable> sigmaBlock(ntSigma, 0, 1); /* Sigma [1][n]   */
+    WriteOnlyRows<algorithmFPType, cpu, NumericTable> VBlock;
+    WriteOnlyRows<algorithmFPType, cpu, NumericTable> sigmaBlock(ntSigma, 0, 1); /* Sigma [1][nColsInSigma]   */
     DAAL_CHECK_BLOCK_STATUS(sigmaBlock);
     algorithmFPType * Sigma = sigmaBlock.get();
 
-    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n, nxb);
-    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n, n);
-    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n * n, sizeof(algorithmFPType));
-    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n * nxb, sizeof(algorithmFPType));
+    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n, nRowsFull);
+    DAAL_OVERFLOW_CHECK_BY_MULTIPLICATION(size_t, n * nRowsFull, sizeof(algorithmFPType));
+    
+    TArray<algorithmFPType, cpu> UPtr;
+    TArray<algorithmFPType, cpu> Aux2TPtr(n * nRowsFull);
 
-    TArray<algorithmFPType, cpu> Aux2TPtr(n * nxb);
-    TArray<algorithmFPType, cpu> VTPtr(n * n);
-    TArray<algorithmFPType, cpu> Aux3TPtr(n * nxb);
+    const DAAL_INT ldU = nComponents;
+
+    algorithmFPType * U     = nullptr;
+    algorithmFPType * VT    = nullptr;
     algorithmFPType * Aux2T = Aux2TPtr.get();
-    algorithmFPType * VT    = VTPtr.get();
-    algorithmFPType * Aux3T = Aux3TPtr.get();
 
-    DAAL_CHECK(Aux2T && VT && Aux3T, ErrorMemoryAllocationFailed);
+    DAAL_CHECK(Aux2T, ErrorMemoryAllocationFailed);
 
     SafeStatus safeStat;
 
     daal::threader_for(nBlocks, nBlocks, [=, &safeStat](int k) {
-        ReadRows<algorithmFPType, cpu, NumericTable> aux2Block(const_cast<NumericTable *>(a[k]), 0, n); /* Aux2  [nxb][n] */
+        const size_t nRows = a[k]->getNumberOfRows();
+        ReadRows<algorithmFPType, cpu, NumericTable> aux2Block(const_cast<NumericTable *>(a[k]), 0, nRows); /* Aux2  [nRows][n] */
         DAAL_CHECK_BLOCK_STATUS_THR(aux2Block);
         const algorithmFPType * Aux2 = aux2Block.get();
 
-        for (size_t i = 0; i < n; i++)
+        for (size_t i = 0; i < nRows; i++)
         {
             for (size_t j = 0; j < n; j++)
             {
-                Aux2T[j * nxb + k * n + i] = Aux2[i * n + j];
+                Aux2T[j * nRowsFull + nRowsOffsets[k] + i] = Aux2[i * n + j];
             }
         }
     });
-
     if (!safeStat) return safeStat.detach();
 
     {
-        DAAL_INT ldAux2 = nxb;
-        DAAL_INT ldAux3 = nxb;
-        DAAL_INT ldV    = n;
+        const DAAL_INT ldAux2 = nRowsFull;
+        const DAAL_INT ldV    = n;
 
-        DAAL_INT ldR = n;
-        DAAL_INT ldU = n;
+        const DAAL_INT ldRT = nComponents;
+        const DAAL_INT ldR  = n;
 
-        TArray<algorithmFPType, cpu> RPtr(n * ldR);
-        TArray<algorithmFPType, cpu> UPtr(n * ldU);
+        TArray<algorithmFPType, cpu> RPtr(nComponents * ldR);
+        TArray<algorithmFPType, cpu> RTPtr(n * ldRT);
         algorithmFPType * R = RPtr.get();
-        algorithmFPType * U = UPtr.get();
-
-        DAAL_CHECK(U && R, ErrorMemoryAllocationFailed);
+        algorithmFPType * RT = RTPtr.get();
+        DAAL_CHECK(R && RT, ErrorMemoryAllocationFailed);
+        
+        if (svdPar->leftSingularMatrix == requiredInPackedForm)
+        {
+            UPtr.reset(nComponents * ldU);
+            U = UPtr.get();
+            DAAL_CHECK(U, ErrorMemoryAllocationFailed);
+        }
+        
+        if (svdPar->rightSingularMatrix == requiredInPackedForm)
+        {
+            VBlock.set(r[1], 0, nComponents); /* V[nComponents][n] */
+            DAAL_CHECK_BLOCK_STATUS(VBlock);
+            VT = VBlock.get();
+        }
 
         /* By some reason, there was this part in Sample */
-        for (size_t i = 0; i < n * ldR; i++)
+        for (size_t i = 0; i < n * ldRT; i++)
         {
-            R[i] = 0.0;
+            RT[i] = 0.0;
         }
 
         // Rc = P*R
-        const auto ecQr = compute_QR_on_one_node<algorithmFPType, cpu>(nxb, n, Aux2T, ldAux2, R, ldR);
+        const auto ecQr = compute_QR_on_one_node<algorithmFPType, cpu>(nRowsFull, n, Aux2T, ldAux2, RT, ldRT);
         if (!ecQr) return ecQr;
-
-        // Qn*R -> Qn*(U*Sigma*V) -> (Qn*U)*Sigma*V
-        const auto ecSvd = compute_svd_on_one_node<algorithmFPType, cpu>(n, n, R, ldR, Sigma, U, ldU, VT, ldV);
-        if (!ecSvd) return ecSvd;
-
-        if (svdPar->leftSingularMatrix == requiredInPackedForm)
+        
+        for (size_t i = 0; i < nComponents; i++)
         {
-            const auto ecGemm = compute_gemm_on_one_node<algorithmFPType, cpu>(nxb, n, Aux2T, ldAux2, U, ldU, Aux3T, ldAux3);
-            if (!ecGemm) return ecGemm;
+            for (size_t j = 0; j < n; j++)
+            {
+                R[i * ldR + j] = RT[j * ldRT + i];
+            }
         }
+
+        // Qn*R -> Qn*(U'*Sigma*V)
+        const auto ecSvd = compute_svd_on_one_node<algorithmFPType, cpu>(n, nComponents, R, ldR, Sigma, VT, ldV, U, ldU);
+        if (!ecSvd) return ecSvd;
     }
 
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
         daal::threader_for(nBlocks, nBlocks, [=, &safeStat](int k) {
-            WriteOnlyRows<algorithmFPType, cpu, NumericTable> aux3Block(r[2 + k], 0, n); /* Aux3  [nxb][n] */
+            const size_t nRows = a[k]->getNumberOfRows();
+
+            DAAL_ASSERT(nRows == r[2 + k]->getNumberOfRows())
+            DAAL_ASSERT(nComponents == r[2 + k]->getNumberOfColumns())
+            ReadRows<algorithmFPType, cpu, NumericTable> aux2Block(const_cast<NumericTable *>(a[k]), 0, nRows); /* Aux2  [nRows][n] */
+            DAAL_CHECK_BLOCK_STATUS_THR(aux2Block);
+            const algorithmFPType * Aux2 = aux2Block.get();
+
+            WriteOnlyRows<algorithmFPType, cpu, NumericTable> aux3Block(r[2 + k], 0, nRows); /* Aux3  [nRows][nComponents] */
             DAAL_CHECK_BLOCK_STATUS_THR(aux3Block);
             algorithmFPType * Aux3 = aux3Block.get();
 
-            for (size_t i = 0; i < n; i++)
+            const DAAL_INT ldAux3 = nComponents;
+
+            const auto ecGemm = compute_gemm_on_one_node_seq<algorithmFPType, cpu>('N', 'N', nComponents, nRows, nComponents, U, ldU, const_cast<algorithmFPType *>(Aux2), nComponents, Aux3, ldAux3);
+            if (!ecGemm)
             {
-                for (size_t j = 0; j < n; j++)
-                {
-                    Aux3[i * n + j] = Aux3T[j * nxb + k * n + i];
-                }
+                safeStat.add(ecGemm);
+                return;
             }
         });
         if (!safeStat) return safeStat.detach();
-    }
-
-    if (svdPar->rightSingularMatrix == requiredInPackedForm)
-    {
-        WriteOnlyRows<algorithmFPType, cpu, NumericTable> VBlock(r[1], 0, n); /* V[n][n] */
-        DAAL_CHECK_BLOCK_STATUS(VBlock);
-        algorithmFPType * V = VBlock.get();
-
-        for (size_t i = 0; i < n; i++)
-        {
-            for (size_t j = 0; j < n; j++)
-            {
-                V[i + j * n] = VT[i * n + j];
-            }
-        }
     }
 
     return Status();

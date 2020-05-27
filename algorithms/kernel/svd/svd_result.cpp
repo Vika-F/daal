@@ -98,17 +98,24 @@ Status Result::check(const daal::algorithms::PartialResult * pres, const daal::a
     const OnlinePartialResult * algPartRes = static_cast<const OnlinePartialResult *>(pres);
     Parameter * svdPar                     = static_cast<Parameter *>(const_cast<daal::algorithms::Parameter *>(par));
     int unexpectedLayouts                  = (int)packed_mask;
-    size_t nVectors                        = algPartRes->getNumberOfRows();
-    size_t nFeatures                       = algPartRes->getNumberOfColumns();
+    const size_t nVectors                  = algPartRes->getNumberOfRows();
+    const size_t nFeatures                 = algPartRes->getNumberOfColumns();
+    const size_t nComponents               = (nVectors < nFeatures ? nVectors : nFeatures);
 
-    Status s = checkNumericTable(get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nFeatures, 1);
+    Status s = checkNumericTable(get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nComponents, 1);
     if (svdPar->rightSingularMatrix == requiredInPackedForm)
     {
-        s |= checkNumericTable(get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nFeatures);
+        
+        s |= checkNumericTable(get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nComponents);
+        if (!s)
+        {
+            NumericTable *vt = get(rightSingularMatrix).get();
+            nComponents, nFeatures, vt->getNumberOfRows(), vt->getNumberOfColumns());
+        }
     }
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
-        s |= checkNumericTable(get(leftSingularMatrix).get(), leftSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nVectors);
+        s |= checkNumericTable(get(leftSingularMatrix).get(), leftSingularMatrixStr(), unexpectedLayouts, 0, nComponents, nVectors);
     }
     return s;
 }

@@ -63,13 +63,14 @@ Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const si
         NumericTable * ntAux1i = const_cast<NumericTable *>(a[k]);
         NumericTable * ntAux3i = const_cast<NumericTable *>(a[k + nBlocks]);
 
-        size_t n = ntAux1i->getNumberOfColumns();
-        size_t m = ntAux1i->getNumberOfRows();
+        const size_t n = ntAux1i->getNumberOfColumns();
+        const size_t m = ntAux1i->getNumberOfRows();
+        const size_t nComponents = ntAux3i->getNumberOfRows();
 
-        const algorithmFPType * Aux1i = Aux1iBlock.set(ntAux1i, 0, m); /* Aux1i = Qin[m][n] */
+        const algorithmFPType * Aux1i = Aux1iBlock.set(ntAux1i, 0, m); /* Aux1i = Qin[m][nComponents] */
         DAAL_CHECK_BLOCK_STATUS(Aux1iBlock);
 
-        const algorithmFPType * Aux3i = Aux3iBlock.set(ntAux3i, 0, n); /* Aux3i = Ri [n][n] */
+        const algorithmFPType * Aux3i = Aux3iBlock.set(ntAux3i, 0, nComponents); /* Aux3i = Ri [nComponents][n] */
         DAAL_CHECK_BLOCK_STATUS(Aux3iBlock);
 
         algorithmFPType * Qi = QiBlock.set(r[0], mCalculated, m); /* Qi [m][n] */
@@ -77,7 +78,7 @@ Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const si
 
         TArray<algorithmFPType, cpu> QiTPtr(n * m);
         TArray<algorithmFPType, cpu> Aux1iTPtr(n * m);
-        TArray<algorithmFPType, cpu> Aux3iTPtr(n * n);
+        TArray<algorithmFPType, cpu> Aux3iTPtr(n * nComponents);
         algorithmFPType * QiT    = QiTPtr.get();
         algorithmFPType * Aux1iT = Aux1iTPtr.get();
         algorithmFPType * Aux3iT = Aux3iTPtr.get();
@@ -93,9 +94,9 @@ Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const si
         }
         for (i = 0; i < n; i++)
         {
-            for (j = 0; j < n; j++)
+            for (j = 0; j < nComponents; j++)
             {
-                Aux3iT[i * n + j] = Aux3i[i + j * n];
+                Aux3iT[i * nComponents + j] = Aux3i[i + j * n];
             }
         }
 
@@ -103,7 +104,7 @@ Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const si
         DAAL_INT ldAux3i = n;
         DAAL_INT ldQi    = m;
 
-        const auto ec = compute_gemm_on_one_node<algorithmFPType, cpu>(m, n, Aux1iT, ldAux1i, Aux3iT, ldAux3i, QiT, ldQi);
+        const auto ec = compute_gemm_on_one_node<algorithmFPType, cpu>('N', 'N', m, n, n, Aux1iT, ldAux1i, Aux3iT, ldAux3i, QiT, ldQi);
         if (!ec) return ec;
 
         for (i = 0; i < n; i++)

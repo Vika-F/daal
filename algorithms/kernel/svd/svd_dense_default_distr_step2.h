@@ -57,7 +57,7 @@ DAAL_EXPORT Status DistributedPartialResult::allocate(const daal::algorithms::In
  * KeyValueDataCollection under outputOfStep2ForStep3 id is structured the same as KeyValueDataCollection under
  * inputOfStep2FromStep1 id of the algorithm input
  * \tparam     algorithmFPType Data type to use for storage in the resulting HomogenNumericTable
- * \param[in]  inCollection    KeyValueDataCollection of all partial results from the first step of  the SVD algorithm in the distributed
+ * \param[in]  inCollection    KeyValueDataCollection of all partial results from the first step of the SVD algorithm in the distributed
  *                             processing mode
  * \param[out] nBlocks         Number of rows in the input data set
  */
@@ -78,16 +78,31 @@ DAAL_EXPORT Status DistributedPartialResult::setPartialResultStorage(KeyValueDat
     DataCollection * fisrtNodeCollection = static_cast<DataCollection *>((*inCollection).getValueByIndex(0).get());
     NumericTable * firstNumericTable     = static_cast<NumericTable *>((*fisrtNodeCollection)[0].get());
 
-    size_t m = firstNumericTable->getNumberOfColumns();
+    size_t m = 0;
+    size_t nComponents = 0;
+    const size_t n = firstNumericTable->getNumberOfColumns();
+    for (size_t i = 0; i < inSize; ++i)
+    {
+        DataCollection * nodeCollection = static_cast<DataCollection *>((*inCollection).getValueByIndex((int)i).get());
+        size_t nodeSize                 = nodeCollection->size();
+        for (size_t j = 0; j < nodeSize; ++j)
+        {
+            NumericTable * nt = static_cast<NumericTable *>((*nodeCollection)[j].get());
+            m += nt->getNumberOfRows();
+        }
+    }
+    nComponents = (n < m ? n : m);
     if (result->get(singularValues).get() == nullptr)
     {
-        Status s = result->allocateImpl<algorithmFPType>(m, 0);
-        DAAL_CHECK_STATUS_VAR(s)
+        Status st;
+        result->set(singularValues, HomogenNumericTable<algorithmFPType>::create(nComponents, 1, NumericTable::doAllocate, &st));
+        result->set(rightSingularMatrix, HomogenNumericTable<algorithmFPType>::create(n, nComponents, NumericTable::doAllocate, &st));
+        DAAL_CHECK_STATUS_VAR(st)
     }
 
     nBlocks = 0;
     Status st;
-    for (size_t i = 0; i < inSize; i++)
+    for (size_t i = 0; i < inSize; ++i)
     {
         DataCollection * nodeCollection = static_cast<DataCollection *>((*inCollection).getValueByIndex((int)i).get());
         size_t nodeKey                  = (*inCollection).getKeyByIndex((int)i);
@@ -96,9 +111,11 @@ DAAL_EXPORT Status DistributedPartialResult::setPartialResultStorage(KeyValueDat
 
         DataCollectionPtr nodePartialResult(new DataCollection());
         DAAL_CHECK_MALLOC(nodePartialResult)
-        for (size_t j = 0; j < nodeSize; j++)
+        for (size_t j = 0; j < nodeSize; ++j)
         {
-            nodePartialResult->push_back(HomogenNumericTable<algorithmFPType>::create(m, m, NumericTable::doAllocate, &st));
+            NumericTable * nt = static_cast<NumericTable *>((*nodeCollection)[j].get());
+            m = nt->getNumberOfRows();
+            nodePartialResult->push_back(HomogenNumericTable<algorithmFPType>::create(nComponents, m, NumericTable::doAllocate, &st));
         }
         (*partialCollection)[nodeKey] = nodePartialResult;
     }

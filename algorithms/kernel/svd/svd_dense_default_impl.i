@@ -69,7 +69,6 @@ Status compute_svd_on_one_node(DAAL_INT m, DAAL_INT n, const algorithmFPType * c
     TArray<algorithmFPType, cpu> workPtr(workDim);
     algorithmFPType * work = workPtr.get();
     DAAL_CHECK(work, ErrorMemoryAllocationFailed);
-
     Lapack<algorithmFPType, cpu>::xgesvd(jobu, jobvt, m, n, const_cast<algorithmFPType *>(a), lda, s, u, ldu, vt, ldvt, work, workDim, &mklStatus);
 
     if (mklStatus != 0)
@@ -147,7 +146,8 @@ Status compute_QR_on_one_node(DAAL_INT m, DAAL_INT n, algorithmFPType * a_q, DAA
 {
     // .. Local arrays
     // .. Memory allocation block
-    TArray<algorithmFPType, cpu> tauPtr(n);
+    DAAL_INT tauSize = (n < m ? n : m);
+    TArray<algorithmFPType, cpu> tauPtr(tauSize);
     algorithmFPType * const tau = tauPtr.get();
     DAAL_CHECK(tau, ErrorMemoryAllocationFailed);
 
@@ -271,29 +271,25 @@ Status compute_QR_on_one_node_seq(DAAL_INT m, DAAL_INT n, algorithmFPType * a_q,
 }
 
 template <typename algorithmFPType, CpuType cpu>
-Status compute_gemm_on_one_node(DAAL_INT m, DAAL_INT n, algorithmFPType * a, DAAL_INT lda, algorithmFPType * b, DAAL_INT ldb, algorithmFPType * c,
+Status compute_gemm_on_one_node(char transa, char transb, DAAL_INT m, DAAL_INT n, DAAL_INT k, algorithmFPType * a, DAAL_INT lda, algorithmFPType * b, DAAL_INT ldb, algorithmFPType * c,
                                 DAAL_INT ldc)
 {
     algorithmFPType one  = algorithmFPType(1.0);
     algorithmFPType zero = algorithmFPType(0.0);
 
-    char notrans = 'N';
-
-    Blas<algorithmFPType, cpu>::xgemm(&notrans, &notrans, &m, &n, &n, &one, a, &lda, b, &ldb, &zero, c, &ldc);
+    Blas<algorithmFPType, cpu>::xgemm(&transa, &transb, &m, &n, &k, &one, a, &lda, b, &ldb, &zero, c, &ldc);
 
     return Status();
 }
 
 template <typename algorithmFPType, CpuType cpu>
-Status compute_gemm_on_one_node_seq(DAAL_INT m, DAAL_INT n, algorithmFPType * a, DAAL_INT lda, algorithmFPType * b, DAAL_INT ldb, algorithmFPType * c,
+Status compute_gemm_on_one_node_seq(char transa, char transb, DAAL_INT m, DAAL_INT n, DAAL_INT k, algorithmFPType * a, DAAL_INT lda, algorithmFPType * b, DAAL_INT ldb, algorithmFPType * c,
                                     DAAL_INT ldc)
 {
     algorithmFPType one  = algorithmFPType(1.0);
     algorithmFPType zero = algorithmFPType(0.0);
 
-    char notrans = 'N';
-
-    Blas<algorithmFPType, cpu>::xxgemm(&notrans, &notrans, &m, &n, &n, &one, a, &lda, b, &ldb, &zero, c, &ldc);
+    Blas<algorithmFPType, cpu>::xxgemm(&transa, &transb, &m, &n, &k, &one, a, &lda, b, &ldb, &zero, c, &ldc);
 
     return Status();
 }
