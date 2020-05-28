@@ -105,13 +105,7 @@ Status Result::check(const daal::algorithms::PartialResult * pres, const daal::a
     Status s = checkNumericTable(get(singularValues).get(), singularValuesStr(), unexpectedLayouts, 0, nComponents, 1);
     if (svdPar->rightSingularMatrix == requiredInPackedForm)
     {
-        
         s |= checkNumericTable(get(rightSingularMatrix).get(), rightSingularMatrixStr(), unexpectedLayouts, 0, nFeatures, nComponents);
-        if (!s)
-        {
-            NumericTable *vt = get(rightSingularMatrix).get();
-            nComponents, nFeatures, vt->getNumberOfRows(), vt->getNumberOfColumns());
-        }
     }
     if (svdPar->leftSingularMatrix == requiredInPackedForm)
     {
