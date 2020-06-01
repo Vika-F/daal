@@ -50,7 +50,6 @@ template <typename algorithmFPType, daal::algorithms::svd::Method method, CpuTyp
 Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const size_t na, const NumericTable * const * a, const size_t nr,
                                                                         NumericTable * r[], const daal::algorithms::Parameter * par)
 {
-    size_t i, j;
     size_t nBlocks     = na / 2;
     size_t mCalculated = 0;
 
@@ -65,6 +64,7 @@ Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const si
 
         const size_t n = ntAux1i->getNumberOfColumns();
         const size_t m = ntAux1i->getNumberOfRows();
+        
         const size_t nComponents = ntAux3i->getNumberOfRows();
 
         const algorithmFPType * Aux1i = Aux1iBlock.set(ntAux1i, 0, m); /* Aux1i = Qin[m][nComponents] */
@@ -76,44 +76,12 @@ Status SVDDistributedStep3Kernel<algorithmFPType, method, cpu>::compute(const si
         algorithmFPType * Qi = QiBlock.set(r[0], mCalculated, m); /* Qi [m][n] */
         DAAL_CHECK_BLOCK_STATUS(QiBlock);
 
-        TArray<algorithmFPType, cpu> QiTPtr(n * m);
-        TArray<algorithmFPType, cpu> Aux1iTPtr(n * m);
-        TArray<algorithmFPType, cpu> Aux3iTPtr(n * nComponents);
-        algorithmFPType * QiT    = QiTPtr.get();
-        algorithmFPType * Aux1iT = Aux1iTPtr.get();
-        algorithmFPType * Aux3iT = Aux3iTPtr.get();
+        DAAL_INT ldAux1i = n;
+        DAAL_INT ldAux3i = nComponents;
+        DAAL_INT ldQi    = nComponents;
 
-        DAAL_CHECK(QiT && Aux1iT && Aux3iT, ErrorMemoryAllocationFailed);
-
-        for (i = 0; i < n; i++)
-        {
-            for (j = 0; j < m; j++)
-            {
-                Aux1iT[i * m + j] = Aux1i[i + j * n];
-            }
-        }
-        for (i = 0; i < n; i++)
-        {
-            for (j = 0; j < nComponents; j++)
-            {
-                Aux3iT[i * nComponents + j] = Aux3i[i + j * n];
-            }
-        }
-
-        DAAL_INT ldAux1i = m;
-        DAAL_INT ldAux3i = n;
-        DAAL_INT ldQi    = m;
-
-        const auto ec = compute_gemm_on_one_node<algorithmFPType, cpu>('N', 'N', m, n, n, Aux1iT, ldAux1i, Aux3iT, ldAux3i, QiT, ldQi);
+        const auto ec = compute_gemm_on_one_node<algorithmFPType, cpu>('N', 'N', nComponents, m, nComponents, const_cast<algorithmFPType *>(Aux3i), ldAux3i, const_cast<algorithmFPType *>(Aux1i), ldAux1i, Qi, ldQi);
         if (!ec) return ec;
-
-        for (i = 0; i < n; i++)
-        {
-            for (j = 0; j < m; j++)
-            {
-                Qi[i + j * n] = QiT[i * m + j];
-            }
-        }
 
         mCalculated += m;
     }

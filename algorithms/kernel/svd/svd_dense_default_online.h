@@ -93,7 +93,7 @@ DAAL_EXPORT Status OnlinePartialResult::addPartialResultStorage(size_t m, size_t
         DataCollectionPtr qCollection = staticPointerCast<DataCollection, SerializationIface>(Argument::get(outputOfStep1ForStep3));
         if (qCollection)
         {
-            qCollection->push_back(HomogenNumericTable<algorithmFPType>::create(nComponents, n, NumericTable::doAllocate, &st));
+            qCollection->push_back(HomogenNumericTable<algorithmFPType>::create(m, n, NumericTable::doAllocate, &st));
         }
         else
         {

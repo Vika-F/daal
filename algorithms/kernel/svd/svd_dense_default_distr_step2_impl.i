@@ -170,9 +170,6 @@ Status SVDDistributedStep2Kernel<algorithmFPType, method, cpu>::compute(const si
 
             DAAL_ASSERT(nRows == r[2 + k]->getNumberOfRows())
             DAAL_ASSERT(nComponents == r[2 + k]->getNumberOfColumns())
-            ReadRows<algorithmFPType, cpu, NumericTable> aux2Block(const_cast<NumericTable *>(a[k]), 0, nRows); /* Aux2  [nRows][n] */
-            DAAL_CHECK_BLOCK_STATUS_THR(aux2Block);
-            const algorithmFPType * Aux2 = aux2Block.get();
 
             WriteOnlyRows<algorithmFPType, cpu, NumericTable> aux3Block(r[2 + k], 0, nRows); /* Aux3  [nRows][nComponents] */
             DAAL_CHECK_BLOCK_STATUS_THR(aux3Block);
@@ -180,7 +177,7 @@ Status SVDDistributedStep2Kernel<algorithmFPType, method, cpu>::compute(const si
 
             const DAAL_INT ldAux3 = nComponents;
 
-            const auto ecGemm = compute_gemm_on_one_node_seq<algorithmFPType, cpu>('N', 'N', nComponents, nRows, nComponents, U, ldU, const_cast<algorithmFPType *>(Aux2), nComponents, Aux3, ldAux3);
+            const auto ecGemm = compute_gemm_on_one_node_seq<algorithmFPType, cpu>('N', 'T', nComponents, nRows, nComponents, U, ldU, const_cast<algorithmFPType *>(Aux2T + nRowsOffsets[k]), nRowsFull, Aux3, ldAux3);
             if (!ecGemm)
             {
                 safeStat.add(ecGemm);
