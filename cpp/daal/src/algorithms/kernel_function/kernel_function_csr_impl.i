@@ -407,21 +407,18 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
         __m256i iA = _mm512_extracti64x4_epi64(idxA, 0);
         __m256i iB = _mm512_extracti64x4_epi64(idxB, 0);
         /* Block of 8 values */
-        __m256 valFloatA = _mm256_loadu_ps(valuesA + offsetA);
-        __m256 valFloatB = _mm256_loadu_ps(valuesB + offsetB);
-        __m512d valA     = _mm512_cvt_roundps_pd(valFloatA, _MM_FROUND_NO_EXC);
-        __m512d valB     = _mm512_cvt_roundps_pd(valFloatB, _MM_FROUND_NO_EXC);
-        __m512d vSum     = _mm512_setzero_pd();
+        __m256 valA = _mm256_loadu_ps(valuesA + offsetA);
+        __m256 valB = _mm256_loadu_ps(valuesB + offsetB);
+        __m256 vSum = _mm256_setzero_ps();
 
         while (1)
         {
-            __m512i concatenated = _mm512_inserti64x4(_mm512_castsi256_si512(iA), iB, 1);                                   // put b above a
-            __m512i matches    = _mm512_castsi256_si512(_mm512_extracti64x4_epi64(_mm512_conflict_epi32(concatenated), 1)); // take top half of result
-            __m512i perm_idx   = _mm512_sub_epi32(all_31, _mm512_lzcnt_epi32(matches));
-            __m512i perm_idx64 = _mm512_mask_permutevar_epi32(_mm512_setzero_epi32(), 0x5555, upcon, perm_idx);
-            __mmask8 have_match  = (__mmask8)_mm512_test_epi32_mask(matches, all_f);
-            __m512d matched_vals = _mm512_maskz_permutexvar_pd(have_match, perm_idx64, valA);
-            vSum                 = _mm512_fmadd_pd(matched_vals, valB, vSum);
+            __m512i concatenated = _mm512_inserti64x4(_mm512_castsi256_si512(iA), iB, 1);             // put b above a
+            __m256i matches      = _mm512_extracti64x4_epi64(_mm512_conflict_epi32(concatenated), 1); // take top half of result
+            __m256i perm_idx     = _mm256_sub_epi32(all_31, _mm256_lzcnt_epi32(matches));
+            __mmask8 have_match  = _mm256_test_epi32_mask(matches, all_f);
+            __m256 matched_vals  = _mm256_maskz_permutexvar_ps(have_match, perm_idx, valA);
+            vSum                 = _mm256_fmadd_ps(matched_vals, valB, vSum);
 
             const int * aidx = (const int *)(&iA);
             const int * bidx = (const int *)(&iB);
@@ -442,10 +439,8 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
                 iA   = _mm512_extracti64x4_epi64(idxA, 0);
                 iB   = _mm512_extracti64x4_epi64(idxB, 0);
 
-                valFloatA = _mm256_loadu_ps(valuesA + offsetA);
-                valFloatB = _mm256_loadu_ps(valuesB + offsetB);
-                valA      = _mm512_cvt_roundps_pd(valFloatA, _MM_FROUND_NO_EXC);
-                valB      = _mm512_cvt_roundps_pd(valFloatB, _MM_FROUND_NO_EXC);
+                valA = _mm256_loadu_ps(valuesA + offsetA);
+                valB = _mm256_loadu_ps(valuesB + offsetB);
             }
             else if (a7 > b7)
             {
@@ -458,8 +453,7 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
                 idxB = _mm512_permutexvar_epi32(idx, tmpB);
                 iB   = _mm512_extracti64x4_epi64(idxB, 0);
 
-                valFloatB = _mm256_loadu_ps(valuesB + offsetB);
-                valB      = _mm512_cvt_roundps_pd(valFloatB, _MM_FROUND_NO_EXC);
+                valB = _mm256_loadu_ps(valuesB + offsetB);
             }
             else // (a7 < b7)
             {
@@ -472,20 +466,11 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
                 idxA = _mm512_permutexvar_epi32(idx, tmpA);
                 iA   = _mm512_extracti64x4_epi64(idxA, 0);
 
-                valFloatA = _mm256_loadu_ps(valuesA + offsetA);
-                valA      = _mm512_cvt_roundps_pd(valFloatA, _MM_FROUND_NO_EXC);
+                valA = _mm256_loadu_ps(valuesA + offsetA);
             }
         }
 
-        double partialSum[8];
-        _mm512_storeu_pd(partialSum, vSum);
-
-        PRAGMA_IVDEP
-        PRAGMA_VECTOR_ALWAYS
-        for (int i = 0; i < 8; i++)
-        {
-            sum += partialSum[i];
-        }
+        sum = _mm512_reduce_add_ps(vSum);
     }
 
     /* Process tail elements in scalar loop */
