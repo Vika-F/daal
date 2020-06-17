@@ -394,8 +394,8 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
 
     if (offsetA + 8 <= endIndexA && offsetB + 8 <= endIndexB && !(endIndexA & 0xffffffff00000000) && !(endIndexB & 0xffffffff00000000))
     {
-        const __m512i all_31 = _mm512_set1_epi32(31);
-        const __m512i all_f  = _mm512_set1_epi32(0xffffffff);
+        const __m256i all_31 = _mm256_set1_epi32(31);
+        const __m256i all_f  = _mm256_set1_epi32(0xffffffff);
         const __m512i upcon  = _mm512_set_epi32(0, 7, 0, 6, 0, 5, 0, 4, 0, 3, 0, 2, 0, 1, 0, 0);
         const __m512i idx    = _mm512_set_epi32(14, 12, 10, 8, 6, 4, 2, 0, 14, 12, 10, 8, 6, 4, 2, 0);
         __m512i tmpA         = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
@@ -469,8 +469,15 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
                 valA = _mm256_loadu_ps(valuesA + offsetA);
             }
         }
+        
+        float partialSum[8];
+        _mm256_storeu_ps(partialSum, vSum);
 
-        sum = _mm512_reduce_add_ps(vSum);
+        PRAGMA_IVDEP
+        PRAGMA_VECTOR_ALWAYS
+        for (int i = 0; i < 8; i++) {
+            sum += partialSum[i];
+        }
     }
 
     /* Process tail elements in scalar loop */
