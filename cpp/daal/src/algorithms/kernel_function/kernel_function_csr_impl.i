@@ -469,13 +469,14 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
                 valA = _mm256_loadu_ps(valuesA + offsetA);
             }
         }
-        
+
         float partialSum[8];
         _mm256_storeu_ps(partialSum, vSum);
 
         PRAGMA_IVDEP
         PRAGMA_VECTOR_ALWAYS
-        for (int i = 0; i < 8; i++) {
+        for (int i = 0; i < 8; i++)
+        {
             sum += partialSum[i];
         }
     }
