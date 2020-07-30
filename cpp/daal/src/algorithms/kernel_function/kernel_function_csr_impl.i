@@ -66,12 +66,50 @@ algorithmFPType computeDotProductBaseline(const size_t startIndexA, const size_t
 }
 
 template <typename algorithmFPType, CpuType cpu>
+algorithmFPType computeDotProduct32bitBaseline(const size_t startIndexA, const size_t endIndexA, const algorithmFPType * valuesA, const unsigned int * indicesA,
+                                          const size_t startIndexB, const size_t endIndexB, const algorithmFPType * valuesB, const unsigned int * indicesB)
+{
+    size_t offsetA      = startIndexA;
+    size_t offsetB      = startIndexB;
+    algorithmFPType sum = 0.0;
+    while ((offsetA < endIndexA) && (offsetB < endIndexB))
+    {
+        const unsigned int colIndex1 = indicesA[offsetA];
+        const unsigned int colIndex2 = indicesB[offsetB];
+        if (colIndex1 == colIndex2)
+        {
+            sum += valuesA[offsetA] * valuesB[offsetB];
+            offsetA++;
+            offsetB++;
+        }
+        else if (colIndex1 > colIndex2)
+        {
+            offsetB++;
+        }
+        else // (colIndex1 < colIndex2)
+        {
+            offsetA++;
+        }
+    }
+    return sum;
+}
+
+template <typename algorithmFPType, CpuType cpu>
 algorithmFPType KernelCSRImplBase<algorithmFPType, cpu>::computeDotProduct(const size_t startIndexA, const size_t endIndexA,
                                                                            const algorithmFPType * valuesA, const size_t * indicesA,
                                                                            const size_t startIndexB, const size_t endIndexB,
                                                                            const algorithmFPType * valuesB, const size_t * indicesB)
 {
     return computeDotProductBaseline<algorithmFPType, cpu>(startIndexA, endIndexA, valuesA, indicesA, startIndexB, endIndexB, valuesB, indicesB);
+}
+
+template <typename algorithmFPType, CpuType cpu>
+algorithmFPType KernelCSRImplBase<algorithmFPType, cpu>::computeDotProduct32bit(const size_t startIndexA, const size_t endIndexA,
+                                                                           const algorithmFPType * valuesA, const unsigned int * indicesA,
+                                                                           const size_t startIndexB, const size_t endIndexB,
+                                                                           const algorithmFPType * valuesB, const unsigned int * indicesB)
+{
+    return computeDotProduct32bitBaseline<algorithmFPType, cpu>(startIndexA, endIndexA, valuesA, indicesA, startIndexB, endIndexB, valuesB, indicesB);
 }
 
 #if defined(__INTEL_COMPILER)
@@ -480,7 +518,96 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct(const size_t startInde
     }
 
     /* Process tail elements in scalar loop */
-    sum += computeDotProductBaseline<float, avx512_mic>(offsetA, endIndexA, valuesA, indicesA, offsetB, endIndexB, valuesB, indicesB);
+    sum += computeDotProductBaseline<float, avx512>(offsetA, endIndexA, valuesA, indicesA, offsetB, endIndexB, valuesB, indicesB);
+
+    return (float)sum;
+}
+
+template <>
+float KernelCSRImplBase<float, avx512>::computeDotProduct32bit(const size_t startIndexA, const size_t endIndexA, const float * valuesA,
+                                                          const unsigned int * indicesA, const size_t startIndexB, const size_t endIndexB,
+                                                          const float * valuesB, const unsigned int * indicesB)
+{
+    size_t offsetA = startIndexA;
+    size_t offsetB = startIndexB;
+    double sum     = 0.0;
+
+    if (offsetA + 8 <= endIndexA && offsetB + 8 <= endIndexB)
+    {
+        /* Block of 8 indices */
+        __m256i iA = _mm256_loadu_si256((__m256i *)(indicesA + offsetA));
+        __m256i iB = _mm256_loadu_si256((__m256i *)(indicesB + offsetB));
+        const __m256 zero = _mm256_setzero_ps();
+
+        /* Block of 8 values */
+        __m256 valA = _mm256_loadu_ps(valuesA + offsetA);
+        __m256 valB = _mm256_loadu_ps(valuesB + offsetB);
+        __m256 vSum = _mm256_setzero_ps();
+
+        while (1)
+        {
+            __mmask8 matchA, matchB;
+            _mm256_2intersect_epi32(iA, iB, &matchA, &matchB);
+
+            __m256 valACompressed = _mm256_mask_compress_ps(zero, matchA, valA);
+            __m256 valBCompressed = _mm256_mask_compress_ps(zero, matchB, valB);
+            vSum = _mm256_fmadd_ps(valACompressed, valBCompressed, vSum);
+
+            const int * aidx = (const int *)(&iA);
+            const int * bidx = (const int *)(&iB);
+            int a7           = aidx[7];
+            int b7           = bidx[7];
+            if (a7 == b7)
+            {
+                offsetA += 8;
+                offsetB += 8;
+                if (offsetA + 8 > endIndexA || offsetB + 8 > endIndexB)
+                {
+                    break;
+                }
+                iA = _mm256_loadu_si256((__m256i *)(indicesA + offsetA));
+                iB = _mm256_loadu_si256((__m256i *)(indicesB + offsetB));
+
+                valA = _mm256_loadu_ps(valuesA + offsetA);
+                valB = _mm256_loadu_ps(valuesB + offsetB);
+            }
+            else if (a7 > b7)
+            {
+                offsetB += 8;
+                if (offsetB + 8 > endIndexB)
+                {
+                    break;
+                }
+                iB = _mm256_loadu_si256((__m256i *)(indicesB + offsetB));
+
+                valB = _mm256_loadu_ps(valuesB + offsetB);
+            }
+            else // (a7 < b7)
+            {
+                offsetA += 8;
+                if (offsetA + 8 > endIndexA)
+                {
+                    break;
+                }
+                iA = _mm256_loadu_si256((__m256i *)(indicesA + offsetA));
+
+                valA = _mm256_loadu_ps(valuesA + offsetA);
+            }
+        }
+
+        float partialSum[8];
+        _mm256_storeu_ps(partialSum, vSum);
+
+        PRAGMA_IVDEP
+        PRAGMA_VECTOR_ALWAYS
+        for (int i = 0; i < 8; i++)
+        {
+            sum += partialSum[i];
+        }
+    }
+
+    /* Process tail elements in scalar loop */
+    sum += computeDotProduct32bitBaseline<float, avx512>(offsetA, endIndexA, valuesA, indicesA, offsetB, endIndexB, valuesB, indicesB);
 
     return (float)sum;
 }

@@ -126,22 +126,84 @@ services::Status KernelImplLinear<fastCSR, algorithmFPType, cpu>::computeInterna
     //compute
     if (a1 == a2)
     {
-        daal::threader_for_optional(nVectors1, nVectors1, [=](size_t i)
+        const size_t blockSize = 512;
+        size_t nBlocks = nVectors1 / blockSize;
+        if (nBlocks * blockSize < nVectors1)
+            nBlocks++;
+
+        const size_t nnz = rowOffsetsA1[nVectors1] - rowOffsetsA1[0];
+        if (!(nnz & 0xffffffff00000000))
         {
-            for (size_t j = 0; j <= i; j++)
+            TArray<unsigned int, cpu> colIndicesArr(nnz);
+            unsigned int * colIndices = colIndicesArr.get();
+            
+            const size_t idxBlockSize = 2048;
+            size_t nIdxBlocks = nnz / idxBlockSize;
+            if (nIdxBlocks * idxBlockSize < nnz)
+                nIdxBlocks++;
+
+            daal::threader_for(nIdxBlocks, nIdxBlocks, [=](size_t ibl)
             {
-                dataR[i * nVectors1 + j] = computeDotProduct(rowOffsetsA1[i] - 1, rowOffsetsA1[i + 1] - 1, dataA1, colIndicesA1,
-                                                             rowOffsetsA1[j] - 1, rowOffsetsA1[j + 1] - 1, dataA1, colIndicesA1);
-                dataR[i * nVectors1 + j] = dataR[i * nVectors1 + j] * k + b;
-            }
-        } );
-        daal::threader_for_optional(nVectors1, nVectors1, [=](size_t i)
-        {
-            for (size_t j = i + 1; j < nVectors1; j++)
+                const size_t iStart = ibl * idxBlockSize;
+                const size_t iEnd = (iStart + idxBlockSize < nnz ? iStart + idxBlockSize : nnz);
+                    
+                PRAGMA_IVDEP
+                PRAGMA_VECTOR_ALWAYS
+                for (size_t i = iStart; i < iEnd; ++i)
+                {
+                    colIndices[i] = unsigned int(colIndicesA1[i]);
+                }
+            } );
+
+            daal::tls<algorithmFPType *> threadBuffer(
+                [=]() -> algorithmFPType * { return new algorithmFPType[blockSize * blockSize]; });
+            daal::threader_for(nBlocks, nBlocks, [=, &threadBuffer](size_t ibl)
             {
-                dataR[i * nVectors1 + j] = dataR[j * nVectors1 + i];
-            }
-        } );
+                daal::threader_for(ibl + 1, ibl + 1, [=, &threadBuffer](size_t jbl)
+                {
+                    const size_t iStart = ibl * blockSize;
+                    const size_t iEnd = (iStart + blockSize < nVectors1 ? iStart + blockSize : nVectors1);
+                    algorithmFPType *res = threadBuffer.local();
+                    if (ibl == jbl)
+                    {
+                        const size_t jStart = iStart;
+                        const size_t jEnd = iEnd;
+                        for (size_t i = iStart, ii = 0; i < iEnd; ++i, ++ii)
+                        {
+                            for (size_t j = jStart, jj = 0; j <= i; j++, ++jj)
+                            {
+                                res[ii * blockSize + jj] = computeDotProduct32bit(rowOffsetsA1[i] - 1, rowOffsetsA1[i + 1] - 1, dataA1, colIndices,
+                                                                        rowOffsetsA1[j] - 1, rowOffsetsA1[j + 1] - 1, dataA1, colIndices);
+                                res[ii * blockSize + jj] = res[ii * blockSize + jj] * k + b;
+                            }
+                        }
+                        for (size_t i = iStart, ii = 0; i < iEnd; ++i, ++ii)
+                        {
+                            for (size_t j = jStart, jj = 0; j <= i; j++, ++jj)
+                            {
+                                dataR[i * nVectors1 + j] = dataR[j * nVectors1 + i] = res[ii * blockSize + jj];
+                            }
+                        }
+                    }
+                    else // (ibl != jbl)
+                    {
+                        const size_t jStart = jbl * blockSize;
+                        const size_t jEnd = (jStart + blockSize < nVectors1 ? jStart + blockSize : nVectors1);
+                        for (size_t i = iStart; i < iEnd; ++i)
+                        {
+                            for (size_t j = jStart; j < jEnd; j++)
+                            {
+                                algorithmFPType res = computeDotProduct32bit(rowOffsetsA1[i] - 1, rowOffsetsA1[i + 1] - 1, dataA1, colIndices,
+                                                                        rowOffsetsA1[j] - 1, rowOffsetsA1[j + 1] - 1, dataA1, colIndices);
+                                res = res * k + b;
+                                dataR[i * nVectors1 + j] = dataR[j * nVectors1 + i] = res;
+                            }
+                        }
+                    }
+                } );
+            } );
+            threadBuffer.reduce([=](algorithmFPType * v) -> void { delete[] (v); });
+        }
     }
     else
     {

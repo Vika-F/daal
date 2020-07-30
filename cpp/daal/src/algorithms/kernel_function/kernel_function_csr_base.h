@@ -69,6 +69,10 @@ protected:
     inline algorithmFPType computeDotProduct(const size_t startIndex1, const size_t endIndex1, const algorithmFPType * dataA1,
                                              const size_t * colIndicesA1, const size_t startIndex2, const size_t endIndex2,
                                              const algorithmFPType * dataA2, const size_t * colIndicesA2);
+
+    inline algorithmFPType computeDotProduct32bit(const size_t startIndex1, const size_t endIndex1, const algorithmFPType * dataA1,
+                                             const unsigned int * colIndicesA1, const size_t startIndex2, const size_t endIndex2,
+                                             const algorithmFPType * dataA2, const unsigned int * colIndicesA2);
 };
 
 } // namespace internal
