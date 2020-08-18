@@ -530,77 +530,78 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct32bit(const size_t star
 {
     size_t offsetA = startIndexA;
     size_t offsetB = startIndexB;
-    double sum     = 0.0;
+    float sum = 0.0f;
+    const unsigned int uf = 16;
 
-    if (offsetA + 8 <= endIndexA && offsetB + 8 <= endIndexB)
+    if (offsetA + uf <= endIndexA && offsetB + uf <= endIndexB)
     {
         /* Block of 8 indices */
-        __m256i iA = _mm256_loadu_si256((__m256i *)(indicesA + offsetA));
-        __m256i iB = _mm256_loadu_si256((__m256i *)(indicesB + offsetB));
-        const __m256 zero = _mm256_setzero_ps();
+        __m512i iA = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
+        __m512i iB = _mm512_loadu_si512((__m512i *)(indicesB + offsetB));
+        const __m512 zero = _mm512_setzero_ps();
 
         /* Block of 8 values */
-        __m256 valA = _mm256_loadu_ps(valuesA + offsetA);
-        __m256 valB = _mm256_loadu_ps(valuesB + offsetB);
-        __m256 vSum = _mm256_setzero_ps();
+        __m512 valA = _mm512_loadu_ps(valuesA + offsetA);
+        __m512 valB = _mm512_loadu_ps(valuesB + offsetB);
+        __m512 vSum = _mm512_setzero_ps();
 
         while (1)
         {
-            __mmask8 matchA, matchB;
-            _mm256_2intersect_epi32(iA, iB, &matchA, &matchB);
+            __mmask16 matchA, matchB;
+            _mm512_2intersect_epi32(iA, iB, &matchA, &matchB);
 
-            __m256 valACompressed = _mm256_mask_compress_ps(zero, matchA, valA);
-            __m256 valBCompressed = _mm256_mask_compress_ps(zero, matchB, valB);
-            vSum = _mm256_fmadd_ps(valACompressed, valBCompressed, vSum);
+            __m512 valACompressed = _mm512_mask_compress_ps(zero, matchA, valA);
+            __m512 valBCompressed = _mm512_mask_compress_ps(zero, matchB, valB);
+            vSum = _mm512_fmadd_ps(valACompressed, valBCompressed, vSum);
 
             const int * aidx = (const int *)(&iA);
             const int * bidx = (const int *)(&iB);
-            int a7           = aidx[7];
-            int b7           = bidx[7];
-            if (a7 == b7)
+            int aLast        = aidx[uf - 1];
+            int bLast        = bidx[uf - 1];
+            if (aLast == bLast)
             {
-                offsetA += 8;
-                offsetB += 8;
-                if (offsetA + 8 > endIndexA || offsetB + 8 > endIndexB)
+                offsetA += uf;
+                offsetB += uf;
+                if (offsetA + uf > endIndexA || offsetB + uf > endIndexB)
                 {
                     break;
                 }
-                iA = _mm256_loadu_si256((__m256i *)(indicesA + offsetA));
-                iB = _mm256_loadu_si256((__m256i *)(indicesB + offsetB));
+                iA = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
+                iB = _mm512_loadu_si512((__m512i *)(indicesB + offsetB));
 
-                valA = _mm256_loadu_ps(valuesA + offsetA);
-                valB = _mm256_loadu_ps(valuesB + offsetB);
+                valA = _mm512_loadu_ps(valuesA + offsetA);
+                valB = _mm512_loadu_ps(valuesB + offsetB);
             }
-            else if (a7 > b7)
+            else if (aLast > bLast)
             {
-                offsetB += 8;
-                if (offsetB + 8 > endIndexB)
+                offsetB += uf;
+                if (offsetB + uf > endIndexB)
                 {
                     break;
                 }
-                iB = _mm256_loadu_si256((__m256i *)(indicesB + offsetB));
+                iB = _mm512_loadu_si512((__m512i *)(indicesB + offsetB));
 
-                valB = _mm256_loadu_ps(valuesB + offsetB);
+                valB = _mm512_loadu_ps(valuesB + offsetB);
             }
-            else // (a7 < b7)
+            else // (aLast < bLast)
             {
-                offsetA += 8;
-                if (offsetA + 8 > endIndexA)
+                offsetA += uf;
+                if (offsetA + uf > endIndexA)
                 {
                     break;
                 }
-                iA = _mm256_loadu_si256((__m256i *)(indicesA + offsetA));
+                iA = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
 
-                valA = _mm256_loadu_ps(valuesA + offsetA);
+                valA = _mm512_loadu_ps(valuesA + offsetA);
             }
         }
 
-        float partialSum[8];
-        _mm256_storeu_ps(partialSum, vSum);
+        float partialSum[uf];
+        _mm512_storeu_ps(partialSum, vSum);
 
         PRAGMA_IVDEP
         PRAGMA_VECTOR_ALWAYS
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < uf; i++)
         {
             sum += partialSum[i];
         }
