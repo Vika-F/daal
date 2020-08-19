@@ -528,71 +528,45 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct32bit(const size_t star
                                                           const unsigned int * indicesA, const size_t startIndexB, const size_t endIndexB,
                                                           const float * valuesB, const unsigned int * indicesB)
 {
-    size_t offsetA = startIndexA;
-    size_t offsetB = startIndexB;
     float sum = 0.0f;
     const unsigned int uf = 16;
+    size_t offsetA = startIndexA, offsetB = startIndexB;
+
+    if (indicesA[startIndexA] > indicesB[endIndexB - 1] || indicesB[startIndexB] > indicesA[endIndexA - 1])
+        return sum;
 
     if (offsetA + uf <= endIndexA && offsetB + uf <= endIndexB)
     {
+
         /* Block of 8 indices */
-        __m512i iA = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
-        __m512i iB = _mm512_loadu_si512((__m512i *)(indicesB + offsetB));
+        __m512i iA, iB;
         const __m512 zero = _mm512_setzero_ps();
 
         /* Block of 8 values */
-        __m512 valA = _mm512_loadu_ps(valuesA + offsetA);
-        __m512 valB = _mm512_loadu_ps(valuesB + offsetB);
+        __m512 valA, valB;
         __m512 vSum = _mm512_setzero_ps();
+        int aLast = 0;
+        int bLast = 0;
 
-        while (1)
+        for (; offsetA + uf <= endIndexA && offsetB + uf <= endIndexB;
+             offsetB += (aLast >= bLast) * uf, offsetA += (aLast <= bLast) * uf)
         {
-            __mmask16 matchA, matchB;
-            _mm512_2intersect_epi32(iA, iB, &matchA, &matchB);
-
-            __m512 valACompressed = _mm512_mask_compress_ps(zero, matchA, valA);
-            __m512 valBCompressed = _mm512_mask_compress_ps(zero, matchB, valB);
-            vSum = _mm512_fmadd_ps(valACompressed, valBCompressed, vSum);
-
-            const int * aidx = (const int *)(&iA);
-            const int * bidx = (const int *)(&iB);
-            int aLast        = aidx[uf - 1];
-            int bLast        = bidx[uf - 1];
-            if (aLast == bLast)
+            if (indicesA[offsetA] <= indicesB[offsetB + uf - 1] && indicesB[offsetB] <= indicesA[offsetA + uf - 1])
             {
-                offsetA += uf;
-                offsetB += uf;
-                if (offsetA + uf > endIndexA || offsetB + uf > endIndexB)
-                {
-                    break;
-                }
                 iA = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
                 iB = _mm512_loadu_si512((__m512i *)(indicesB + offsetB));
-
                 valA = _mm512_loadu_ps(valuesA + offsetA);
                 valB = _mm512_loadu_ps(valuesB + offsetB);
-            }
-            else if (aLast > bLast)
-            {
-                offsetB += uf;
-                if (offsetB + uf > endIndexB)
-                {
-                    break;
-                }
-                iB = _mm512_loadu_si512((__m512i *)(indicesB + offsetB));
 
-                valB = _mm512_loadu_ps(valuesB + offsetB);
-            }
-            else // (aLast < bLast)
-            {
-                offsetA += uf;
-                if (offsetA + uf > endIndexA)
-                {
-                    break;
-                }
-                iA = _mm512_loadu_si512((__m512i *)(indicesA + offsetA));
+                __mmask16 matchA, matchB;
+                _mm512_2intersect_epi32(iA, iB, &matchA, &matchB);
 
-                valA = _mm512_loadu_ps(valuesA + offsetA);
+                __m512 valACompressed = _mm512_mask_compress_ps(zero, matchA, valA);
+                __m512 valBCompressed = _mm512_mask_compress_ps(zero, matchB, valB);
+                vSum = _mm512_fmadd_ps(valACompressed, valBCompressed, vSum);
+
+                aLast = ((const int *)(&iA))[uf - 1];
+                bLast = ((const int *)(&iB))[uf - 1];
             }
         }
 
@@ -610,7 +584,7 @@ float KernelCSRImplBase<float, avx512>::computeDotProduct32bit(const size_t star
     /* Process tail elements in scalar loop */
     sum += computeDotProduct32bitBaseline<float, avx512>(offsetA, endIndexA, valuesA, indicesA, offsetB, endIndexB, valuesB, indicesB);
 
-    return (float)sum;
+    return sum;
 }
         #endif // __CPUID__(DAAL_CPU) == __avx512__
 
