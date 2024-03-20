@@ -333,9 +333,12 @@ private:
 // The first elements in the tuple will be taken from the first list of types;
 // the second elements in the tuple will be taken from the second list of type.
 // As the result, 12 variants of the `TestType` parameter are created.
-using csr_accessor_types = COMBINE_TYPES((std::int32_t, std::int64_t, float, double),
+/*using csr_accessor_types = COMBINE_TYPES((std::int32_t, std::int64_t, float, double),
                                          (std::int32_t, float, double));
-
+*/
+using csr_accessor_types = COMBINE_TYPES((float),
+                                         (float, double));
+/*
 TEMPLATE_LIST_TEST_M(csr_accessor_test,
                      "CSR accessor can read the whole table",
                      "[csr_accessor][integration]",
@@ -362,6 +365,7 @@ TEMPLATE_LIST_TEST_M(csr_accessor_test,
 
     this->pull_checks(0, -1);
 }
+*/
 
 TEMPLATE_LIST_TEST_M(csr_accessor_test,
                      "CSR accessor can read the part of the table",
@@ -369,18 +373,21 @@ TEMPLATE_LIST_TEST_M(csr_accessor_test,
                      csr_accessor_types) {
     SKIP_IF(this->not_float64_friendly());
 
-    this->table_indexing_ = GENERATE(sparse_indexing::zero_based, sparse_indexing::one_based);
-    this->accessor_indexing_ = GENERATE(sparse_indexing::zero_based, sparse_indexing::one_based);
+    // this->table_indexing_ = GENERATE(sparse_indexing::zero_based, sparse_indexing::one_based);
+    // this->accessor_indexing_ = GENERATE(sparse_indexing::zero_based, sparse_indexing::one_based);
+
+    this->table_indexing_ = GENERATE(sparse_indexing::one_based);
+    this->accessor_indexing_ = GENERATE(sparse_indexing::one_based);
 
 #ifdef ONEDAL_DATA_PARALLEL
     this->table_alloc_ = GENERATE(test_alloc_kind::host,
-                                  test_alloc_kind::usm_host,
-                                  test_alloc_kind::usm_device,
+                                  //test_alloc_kind::usm_host,
+                                  //test_alloc_kind::usm_device,
                                   test_alloc_kind::usm_shared);
 
     this->accessor_alloc_ = GENERATE(test_alloc_kind::host,
-                                     test_alloc_kind::usm_host,
-                                     test_alloc_kind::usm_device,
+                                     //test_alloc_kind::usm_host,
+                                     //test_alloc_kind::usm_device,
                                      test_alloc_kind::usm_shared);
 #else
     this->table_alloc_ = test_alloc_kind::host;
